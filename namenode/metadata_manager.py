@@ -53,7 +53,7 @@ class MetadataManager:
             
             # Ensure parent directory exists
             parent_path = os.path.dirname(path)
-            if parent_path != ./. and parent_path != "" and parent_path not in self.directories:
+            if parent_path and parent_path != '/' and parent_path not in self.directories:
                 raise FileNotFoundError(f"Parent directory not found: {parent_path}")
             
             # Create file metadata
@@ -69,9 +69,13 @@ class MetadataManager:
             self.files[path] = file_info
             
             # Update parent directory
-            if parent_path in self.directories:
+            if parent_path and parent_path in self.directories:
                 self.directories[parent_path].children.add(path)
                 self.directories[parent_path].modified_at = time.time()
+            elif parent_path == '':
+                # Handle root directory case
+                self.directories['/'].children.add(path)
+                self.directories['/'].modified_at = time.time()
             
             self._persist_metadata()
             logger.info(f"Created file: {path}")
@@ -96,9 +100,12 @@ class MetadataManager:
             
             # Update parent directory
             parent_path = os.path.dirname(path)
-            if parent_path in self.directories:
+            if parent_path and parent_path in self.directories:
                 self.directories[parent_path].children.discard(path)
                 self.directories[parent_path].modified_at = time.time()
+            elif parent_path == '':
+                self.directories['/'].children.discard(path)
+                self.directories['/'].modified_at = time.time()
             
             # Remove chunk metadata
             for chunk_id in chunk_ids:
@@ -117,7 +124,7 @@ class MetadataManager:
             
             # Ensure parent directory exists
             parent_path = os.path.dirname(path)
-            if parent_path != ./. and parent_path != "" and parent_path not in self.directories:
+            if parent_path and parent_path != '/' and parent_path not in self.directories:
                 raise FileNotFoundError(f"Parent directory not found: {parent_path}")
             
             # Create directory
@@ -129,9 +136,12 @@ class MetadataManager:
             )
             
             # Update parent directory
-            if parent_path in self.directories:
+            if parent_path and parent_path in self.directories:
                 self.directories[parent_path].children.add(path)
                 self.directories[parent_path].modified_at = time.time()
+            elif parent_path == '':
+                self.directories['/'].children.add(path)
+                self.directories['/'].modified_at = time.time()
             
             self._persist_metadata()
             logger.info(f"Created directory: {path}")
@@ -191,6 +201,15 @@ class MetadataManager:
             if chunk_id in self.chunks:
                 self.chunks[chunk_id].replicas = replicas
                 self._persist_metadata()
+    
+    def update_file_size(self, file_path: str, size: int):
+        """Update file size after upload completion."""
+        with self.lock:
+            if file_path in self.files:
+                self.files[file_path].size = size
+                self.files[file_path].modified_at = time.time()
+                self._persist_metadata()
+                logger.info(f"Updated size for {file_path}: {size} bytes")
     
     def _persist_metadata(self):
         """Persist metadata to disk."""
@@ -258,12 +277,3 @@ class MetadataManager:
             
         except Exception as e:
             logger.error(f"Failed to load metadata: {e}")
-
-    def update_file_size(self, file_path: str, size: int):
-        """Update file size after upload completion."""
-        with self.lock:
-            if file_path in self.files:
-                self.files[file_path].size = size
-                self.files[file_path].modified_at = time.time()
-                self._persist_metadata()
-                logger.info(f"Updated size for {file_path}: {size} bytes")

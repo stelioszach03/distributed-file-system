@@ -1,9 +1,10 @@
 """
 Constants used across the distributed file system.
 """
+import os
 
 # Network configuration
-NAMENODE_HOST = 'namenode'
+NAMENODE_HOST = os.environ.get('NAMENODE_HOST', 'namenode')
 NAMENODE_PORT = 9870
 NAMENODE_API_PORT = 8080
 DATANODE_PORT = 9866
