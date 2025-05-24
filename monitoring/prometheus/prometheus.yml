@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'namenode'
+    static_configs:
+      - targets: ['namenode:9090']
+        labels:
+          service: 'namenode'
+
+  - job_name: 'datanode'
+    static_configs:
+      - targets: ['datanode-1:9091', 'datanode-2:9091', 'datanode-3:9091']
+        labels:
+          service: 'datanode'

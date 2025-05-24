@@ -1,0 +1,67 @@
+{
+  "dashboard": {
+    "title": "Distributed File System Dashboard",
+    "panels": [
+      {
+        "title": "Cluster Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(up{service=\"datanode\"} == 1)"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 6,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "title": "Storage Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(dfs_datanode_storage_used_bytes) / sum(dfs_datanode_storage_used_bytes + dfs_datanode_storage_available_bytes) * 100"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 6,
+          "y": 0
+        }
+      },
+      {
+        "title": "DataNode CPU Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "dfs_datanode_cpu_usage_percent"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "title": "Chunk Operations",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(dfs_datanode_chunk_operations_total[5m])"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        }
+      }
+    ]
+  }
+}

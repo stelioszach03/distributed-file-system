@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  namenode:
+    build:
+      context: .
+      dockerfile: docker/namenode.Dockerfile
+    container_name: dfs-namenode
+    hostname: namenode
+    ports:
+      - "9870:9870"   # RPC port
+      - "8080:8080"   # API port
+      - "9090:9090"   # Metrics port
+    volumes:
+      - namenode_data:/data/namenode
+    networks:
+      - dfs-network
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  datanode1:
+    build:
+      context: .
+      dockerfile: docker/datanode.Dockerfile
+    container_name: dfs-datanode1
+    hostname: datanode-1
+    ports:
+      - "9866:9866"   # RPC port
+      - "8081:8081"   # API port
+      - "9091:9091"   # Metrics port
+    volumes:
+      - datanode1_data:/data/dfs
+    networks:
+      - dfs-network
+    environment:
+      - DATANODE_ID=datanode-1
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - namenode
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  datanode2:
+    build:
+      context: .
+      dockerfile: docker/datanode.Dockerfile
+    container_name: dfs-datanode2
+    hostname: datanode-2
+    ports:
+      - "9867:9866"
+      - "8082:8081"
+      - "9092:9091"
+    volumes:
+      - datanode2_data:/data/dfs
+    networks:
+      - dfs-network
+    environment:
+      - DATANODE_ID=datanode-2
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - namenode
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  datanode3:
+    build:
+      context: .
+      dockerfile: docker/datanode.Dockerfile
+    container_name: dfs-datanode3
+    hostname: datanode-3
+    ports:
+      - "9868:9866"
+      - "8083:8081"
+      - "9093:9091"
+    volumes:
+      - datanode3_data:/data/dfs
+    networks:
+      - dfs-network
+    environment:
+      - DATANODE_ID=datanode-3
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - namenode
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  client:
+    build:
+      context: .
+      dockerfile: docker/client.Dockerfile
+    container_name: dfs-client
+    volumes:
+      - ./workspace:/workspace
+    networks:
+      - dfs-network
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - namenode
+    stdin_open: true
+    tty: true
+    entrypoint: ["/bin/bash"]
+
+  # ui:
+  #   build:
+  #     context: ./ui
+  #     dockerfile: ../docker/ui.Dockerfile
+  #   container_name: dfs-ui
+  #   ports:
+  #     - "3001:80"
+  #   networks:
+  #     - dfs-network
+  #   environment:
+  #     - REACT_APP_API_URL=http://localhost:8080
+  #   depends_on:
+  #     - namenode
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: dfs-prometheus
+    ports:
+      - "9094:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - dfs-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: dfs-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana_data:/var/lib/grafana
+    networks:
+      - dfs-network
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+
+networks:
+  dfs-network:
+    driver: bridge
+
+volumes:
+  namenode_data:
+  datanode1_data:
+  datanode2_data:
+  datanode3_data:
+  prometheus_data:
+  grafana_data:
