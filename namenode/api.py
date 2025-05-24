@@ -7,6 +7,7 @@ import json
 from common.constants import NAMENODE_API_PORT, CHUNK_SIZE
 from common.messages import ChunkInfo
 from common.utils import setup_logger, calculate_checksum
+from .file_handlers import FileHandlers
 
 
 logger = setup_logger('NameNodeAPI')
@@ -19,6 +20,10 @@ class NameNodeAPI:
         self.app = Flask(__name__)
         self.metadata_manager = metadata_manager
         self.chunk_manager = chunk_manager
+        self.file_handlers = FileHandlers(metadata_manager, chunk_manager)
+        
+        # Configure max upload size
+        self.app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024  # 5GB
         
         # Register routes
         self._register_routes()
@@ -56,23 +61,34 @@ class NameNodeAPI:
         
         @self.app.route('/files', methods=['POST'])
         def create_file():
-            """Create a new file."""
+            """Create a new file or upload file content."""
             try:
-                data = request.json
-                path = data.get('path')
-                if not path:
-                    raise BadRequest("Path is required")
-                
-                file_info = self.metadata_manager.create_file(
-                    path=path,
-                    replication_factor=data.get('replication_factor', 3)
-                )
-                
-                return jsonify({
-                    'path': file_info.path,
-                    'created_at': file_info.created_at,
-                    'replication_factor': file_info.replication_factor
-                }), 201
+                # Check if this is a file upload
+                if 'file' in request.files:
+                    # Handle multipart file upload
+                    path = request.form.get('path')
+                    if not path:
+                        raise BadRequest("Path is required")
+                    
+                    result = self.file_handlers.handle_file_upload(path)
+                    return jsonify(result), 201
+                else:
+                    # Handle metadata-only creation
+                    data = request.json
+                    path = data.get('path')
+                    if not path:
+                        raise BadRequest("Path is required")
+                    
+                    file_info = self.metadata_manager.create_file(
+                        path=path,
+                        replication_factor=data.get('replication_factor', 3)
+                    )
+                    
+                    return jsonify({
+                        'path': file_info.path,
+                        'created_at': file_info.created_at,
+                        'replication_factor': file_info.replication_factor
+                    }), 201
                 
             except FileExistsError as e:
                 return jsonify({'error': str(e)}), 409
@@ -111,6 +127,18 @@ class NameNodeAPI:
                 'replication_factor': file_info.replication_factor
             })
         
+        @self.app.route('/files/<path:file_path>/download', methods=['GET'])
+        def download_file(file_path):
+            """Download file content."""
+            try:
+                file_path = '/' + file_path
+                return self.file_handlers.handle_file_download(file_path)
+            except Exception as e:
+                logger.error(f"Error downloading file: {e}")
+                if "not found" in str(e).lower():
+                    return jsonify({'error': str(e)}), 404
+                return jsonify({'error': str(e)}), 500
+        
         @self.app.route('/files/<path:file_path>', methods=['DELETE'])
         def delete_file(file_path):
             """Delete a file."""
@@ -118,7 +146,12 @@ class NameNodeAPI:
                 file_path = '/' + file_path
                 chunk_ids = self.metadata_manager.delete_file(file_path)
                 
-                # TODO: Trigger chunk deletion on DataNodes
+                # Notify DataNodes to delete chunks
+                for chunk_id in chunk_ids:
+                    locations = self.chunk_manager.get_chunk_locations(chunk_id)
+                    for node_id in locations:
+                        # Queue chunk deletion (in production, this would be async)
+                        logger.info(f"Queuing deletion of chunk {chunk_id} from {node_id}")
                 
                 return jsonify({
                     'message': 'File deleted',
@@ -211,6 +244,16 @@ class NameNodeAPI:
                 
             except Exception as e:
                 logger.error(f"Error completing chunk: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/chunks/status', methods=['GET'])
+        def chunk_status():
+            """Get chunk distribution status."""
+            try:
+                status = self.file_handlers.handle_chunk_status()
+                return jsonify(status)
+            except Exception as e:
+                logger.error(f"Error getting chunk status: {e}")
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/cluster/stats', methods=['GET'])

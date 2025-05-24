@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   namenode:
     build:
@@ -115,19 +113,19 @@ services:
     tty: true
     entrypoint: ["/bin/bash"]
 
-  # ui:
-  #   build:
-  #     context: ./ui
-  #     dockerfile: ../docker/ui.Dockerfile
-  #   container_name: dfs-ui
-  #   ports:
-  #     - "3001:80"
-  #   networks:
-  #     - dfs-network
-  #   environment:
-  #     - REACT_APP_API_URL=http://localhost:8080
-  #   depends_on:
-  #     - namenode
+  ui:
+    build:
+      context: .
+      dockerfile: docker/ui.Dockerfile
+    container_name: dfs-ui
+    ports:
+      - "3001:80"
+    networks:
+      - dfs-network
+    environment:
+      - REACT_APP_API_URL=/api
+    depends_on:
+      - namenode
 
   prometheus:
     image: prom/prometheus:latest
@@ -149,6 +147,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
       - grafana_data:/var/lib/grafana
     networks:

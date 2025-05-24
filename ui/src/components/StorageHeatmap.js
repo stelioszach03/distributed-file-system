@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled from '@emotion/styled';
 import { HardDrive, TrendingUp, AlertTriangle } from 'lucide-react';
+import api from '../services/api';
 
 const Container = styled.div`
   background: ${props => props.darkMode ? '#1a1a1a' : '#ffffff'};
@@ -126,21 +127,48 @@ const StatLabel = styled.div`
 
 function StorageHeatmap({ darkMode }) {
   const [nodes, setNodes] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Generate mock data for visualization
-    const mockNodes = Array.from({ length: 12 }, (_, i) => ({
-      id: `node-${i + 1}`,
-      usage: Math.random() * 100,
-      totalSpace: 1000 * 1024 * 1024 * 1024, // 1TB
-      usedSpace: Math.random() * 1000 * 1024 * 1024 * 1024
-    }));
-    setNodes(mockNodes);
+    loadNodeData();
+    const interval = setInterval(loadNodeData, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  const avgUsage = nodes.reduce((sum, node) => sum + node.usage, 0) / nodes.length || 0;
+  const loadNodeData = async () => {
+    try {
+      const datanodes = await api.listDataNodes();
+      const stats = await api.getClusterStats();
+      
+      // Convert real node data to heatmap format
+      const nodeData = datanodes.map(node => ({
+        id: node.node_id,
+        usage: node.used_space && (node.used_space + node.available_space) > 0 
+          ? (node.used_space / (node.used_space + node.available_space)) * 100 
+          : 0,
+        totalSpace: node.used_space + node.available_space,
+        usedSpace: node.used_space,
+        availableSpace: node.available_space,
+        isAlive: node.is_alive,
+        chunkCount: node.chunk_count
+      }));
+      
+      setNodes(nodeData);
+      setLoading(false);
+    } catch (error) {
+      console.error('Failed to load node data:', error);
+      setLoading(false);
+    }
+  };
+
+  const avgUsage = nodes.length > 0 
+    ? nodes.reduce((sum, node) => sum + node.usage, 0) / nodes.length 
+    : 0;
+  
   const highUsageNodes = nodes.filter(node => node.usage > 80).length;
+  const deadNodes = nodes.filter(node => !node.isAlive).length;
   const totalCapacity = nodes.reduce((sum, node) => sum + node.totalSpace, 0);
+  const totalUsed = nodes.reduce((sum, node) => sum + node.usedSpace, 0);
 
   const formatBytes = (bytes) => {
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -148,6 +176,20 @@ function StorageHeatmap({ darkMode }) {
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
+
+  if (loading) {
+    return (
+      <Container darkMode={darkMode}>
+        <Title darkMode={darkMode}>
+          <HardDrive size={28} />
+          Storage Heatmap
+        </Title>
+        <p style={{ textAlign: 'center', color: darkMode ? '#999' : '#666' }}>
+          Loading node data...
+        </p>
+      </Container>
+    );
+  }
 
   return (
     <Container darkMode={darkMode}>
@@ -161,10 +203,16 @@ function StorageHeatmap({ darkMode }) {
           <NodeCell 
             key={node.id} 
             usage={node.usage}
-            title={`${node.id}: ${formatBytes(node.usedSpace)} / ${formatBytes(node.totalSpace)}`}
+            title={`${node.id}: ${formatBytes(node.usedSpace)} / ${formatBytes(node.totalSpace)} (${node.chunkCount} chunks)`}
           >
             <NodeLabel>{node.id}</NodeLabel>
             <NodeUsage>{Math.round(node.usage)}%</NodeUsage>
+            {!node.isAlive && (
+              <AlertTriangle 
+                size={16} 
+                style={{ position: 'absolute', top: '0.5rem', right: '0.5rem' }} 
+              />
+            )}
           </NodeCell>
         ))}
       </HeatmapGrid>
@@ -207,8 +255,10 @@ function StorageHeatmap({ darkMode }) {
         </StatCard>
         
         <StatCard>
-          <StatValue color="#007bff">{nodes.length}</StatValue>
-          <StatLabel darkMode={darkMode}>Total Nodes</StatLabel>
+          <StatValue color={deadNodes > 0 ? '#dc3545' : '#007bff'}>
+            {nodes.length} / {deadNodes}
+          </StatValue>
+          <StatLabel darkMode={darkMode}>Active / Dead Nodes</StatLabel>
         </StatCard>
       </StatsSection>
     </Container>

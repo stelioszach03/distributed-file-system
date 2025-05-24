@@ -176,6 +176,30 @@ class DataNodeServer:
             """List all stored chunks."""
             chunks = self.storage_manager.list_chunks()
             return jsonify({'chunks': chunks, 'count': len(chunks)})
+        
+        @self.app.route('/metrics', methods=['GET'])
+        def get_metrics():
+            """Get current node metrics."""
+            try:
+                health = self.health_reporter.get_health_status()
+                
+                # Return metrics in a format suitable for charts
+                return jsonify({
+                    'node_id': self.node_id,
+                    'timestamp': time.time(),
+                    'cpu': health['system']['cpu_usage'],
+                    'memory': health['system']['memory_usage'],
+                    'storage': (health['storage']['used'] / 
+                               (health['storage']['used'] + health['storage']['available']) * 100
+                               if health['storage']['used'] + health['storage']['available'] > 0 
+                               else 0),
+                    'chunk_count': health['storage']['chunk_count'],
+                    'uptime': health['uptime']
+                }), 200
+                
+            except Exception as e:
+                logger.error(f"Failed to get metrics: {e}")
+                return jsonify({'error': str(e)}), 500
     
     def _heartbeat_loop(self):
         """Send periodic heartbeats to NameNode."""

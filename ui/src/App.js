@@ -4,7 +4,7 @@ import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-do
 import { 
   HardDrive, Upload, Download, Folder, File, Server, 
   Activity, Moon, Sun, Home, BarChart3, Settings,
-  Trash2, Info, RefreshCw, Search, Grid3x3
+  Trash2, Info, RefreshCw, Search, Grid
 } from 'lucide-react';
 import FileExplorer from './components/FileExplorer';
 import ClusterDashboard from './components/ClusterDashboard';
@@ -277,7 +277,7 @@ function App() {
               
               <StatCard darkMode={darkMode}>
                 <StatIcon color="#dc3545">
-                  <Grid3x3 size={24} />
+                  <Grid size={24} />
                 </StatIcon>
                 <StatInfo darkMode={darkMode}>
                   <h3>Usage</h3>

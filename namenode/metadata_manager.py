@@ -258,3 +258,12 @@ class MetadataManager:
             
         except Exception as e:
             logger.error(f"Failed to load metadata: {e}")
+
+    def update_file_size(self, file_path: str, size: int):
+        """Update file size after upload completion."""
+        with self.lock:
+            if file_path in self.files:
+                self.files[file_path].size = size
+                self.files[file_path].modified_at = time.time()
+                self._persist_metadata()
+                logger.info(f"Updated size for {file_path}: {size} bytes")

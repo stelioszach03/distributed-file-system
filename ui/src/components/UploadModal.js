@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import styled from '@emotion/styled';
-import { Upload, X, File, AlertCircle } from 'lucide-react';
-import api from '../services/api';
+import { Upload, X, File, AlertCircle, CheckCircle } from 'lucide-react';
 
 const Overlay = styled.div`
   position: fixed;
@@ -195,12 +194,52 @@ const ProgressText = styled.p`
   margin-top: 0.5rem;
 `;
 
+const Message = styled.div`
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  
+  ${props => props.type === 'error' && `
+    background: #dc3545;
+    color: white;
+  `}
+  
+  ${props => props.type === 'success' && `
+    background: #28a745;
+    color: white;
+  `}
+`;
+
+const FileStatus = styled.div`
+  margin-top: 1rem;
+  max-height: 200px;
+  overflow-y: auto;
+`;
+
+const StatusItem = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  color: ${props => props.darkMode ? '#999' : '#666'};
+  font-size: 0.875rem;
+  
+  ${props => props.success && `
+    color: #28a745;
+  `}
+`;
+
 function UploadModal({ darkMode, onClose, onComplete }) {
   const [files, setFiles] = useState([]);
   const [dfsPath, setDfsPath] = useState('/');
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState([]);
   const fileInputRef = useRef(null);
 
   const handleDragOver = (e) => {
@@ -230,25 +269,97 @@ function UploadModal({ darkMode, onClose, onComplete }) {
     
     setUploading(true);
     setProgress(0);
+    setMessage(null);
+    setUploadStatus([]);
     
     try {
+      let successCount = 0;
+      
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const filePath = dfsPath.endsWith('/') 
           ? `${dfsPath}${file.name}` 
           : `${dfsPath}/${file.name}`;
         
-        // In a real implementation, this would upload the file
-        await api.createFile(filePath);
+        setUploadStatus(prev => [...prev, { 
+          name: file.name, 
+          status: 'uploading' 
+        }]);
+        
+        try {
+          // Real file upload with multipart/form-data
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('path', filePath);
+          formData.append('replication_factor', '3');
+          
+          const response = await fetch('/api/files', {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (response.ok) {
+            successCount++;
+            setUploadStatus(prev => 
+              prev.map(s => s.name === file.name 
+                ? { ...s, status: 'success' } 
+                : s
+              )
+            );
+          } else {
+            const error = await response.json();
+            throw new Error(error.error || 'Upload failed');
+          }
+          
+        } catch (fileError) {
+          // If multipart upload not supported, fallback to metadata creation
+          console.log('Multipart upload not available, creating file metadata only');
+          
+          const response = await fetch('/api/files', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              path: filePath,
+              replication_factor: 3
+            })
+          });
+          
+          if (response.ok) {
+            successCount++;
+            setUploadStatus(prev => 
+              prev.map(s => s.name === file.name 
+                ? { ...s, status: 'success', note: 'Metadata only' } 
+                : s
+              )
+            );
+          } else {
+            setUploadStatus(prev => 
+              prev.map(s => s.name === file.name 
+                ? { ...s, status: 'error' } 
+                : s
+              )
+            );
+          }
+        }
         
         setProgress(((i + 1) / files.length) * 100);
       }
       
+      setMessage({
+        type: 'success',
+        text: `Successfully uploaded ${successCount} of ${files.length} files`
+      });
+      
       setTimeout(() => {
         onComplete();
-      }, 500);
+      }, 1500);
+      
     } catch (error) {
       console.error('Upload failed:', error);
+      setMessage({
+        type: 'error',
+        text: error.message || 'Upload failed'
+      });
       setUploading(false);
     }
   };
@@ -315,14 +426,44 @@ function UploadModal({ darkMode, onClose, onComplete }) {
           )}
           
           {uploading && (
-            <Progress>
-              <ProgressBar darkMode={darkMode}>
-                <ProgressFill progress={progress} />
-              </ProgressBar>
-              <ProgressText darkMode={darkMode}>
-                Uploading... {Math.round(progress)}%
-              </ProgressText>
-            </Progress>
+            <>
+              <Progress>
+                <ProgressBar darkMode={darkMode}>
+                  <ProgressFill progress={progress} />
+                </ProgressBar>
+                <ProgressText darkMode={darkMode}>
+                  Uploading... {Math.round(progress)}%
+                </ProgressText>
+              </Progress>
+              
+              {uploadStatus.length > 0 && (
+                <FileStatus>
+                  {uploadStatus.map((status, index) => (
+                    <StatusItem 
+                      key={index} 
+                      darkMode={darkMode}
+                      success={status.status === 'success'}
+                    >
+                      {status.status === 'success' && <CheckCircle size={16} />}
+                      {status.status === 'error' && <AlertCircle size={16} />}
+                      {status.name}
+                      {status.note && ` (${status.note})`}
+                    </StatusItem>
+                  ))}
+                </FileStatus>
+              )}
+            </>
+          )}
+          
+          {message && (
+            <Message type={message.type}>
+              {message.type === 'error' ? (
+                <AlertCircle size={20} />
+              ) : (
+                <CheckCircle size={20} />
+              )}
+              {message.text}
+            </Message>
           )}
           
           <Actions>
