@@ -1,9 +1,0 @@
-version: '3.8'
-
-services:
-  client:
-    extra_hosts:
-      - "namenode:host-gateway"
-      - "datanode-1:host-gateway"
-      - "datanode-2:host-gateway"
-      - "datanode-3:host-gateway"
