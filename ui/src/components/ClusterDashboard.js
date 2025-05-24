@@ -146,11 +146,21 @@ const LoadingMessage = styled.div`
   padding: 2rem;
 `;
 
+const DataSourceIndicator = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.625rem;
+  color: ${props => props.isLive ? '#28a745' : '#ffc107'};
+  margin-top: 0.25rem;
+`;
+
 function ClusterDashboard({ darkMode }) {
   const [datanodes, setDatanodes] = useState([]);
   const [metrics, setMetrics] = useState([]);
   const [nodeMetrics, setNodeMetrics] = useState({});
   const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState({});
 
   useEffect(() => {
     loadData();
@@ -164,31 +174,60 @@ function ClusterDashboard({ darkMode }) {
       const nodes = await api.listDataNodes();
       setDatanodes(nodes);
       
-      // Try to get metrics from each datanode
+      // Try to get live metrics from each datanode
       const metricsPromises = nodes.map(async (node) => {
         try {
-          // Attempt to fetch metrics from datanode API
-          const response = await fetch(`http://localhost:${8081 + parseInt(node.node_id.split('-')[1]) - 1}/metrics`);
+          // Calculate the correct port for each datanode
+          const nodeNumber = parseInt(node.node_id.split('-')[1]);
+          const port = 8081 + (nodeNumber - 1);
+          
+          // Try to fetch live metrics
+          const response = await fetch(`http://localhost:${port}/metrics`);
           if (response.ok) {
             const data = await response.json();
-            return { node_id: node.node_id, ...data };
+            setDataSource(prev => ({ ...prev, [node.node_id]: 'live' }));
+            return { ...data, node_id: node.node_id };
           }
         } catch (error) {
-          // If metrics endpoint doesn't exist or fails, generate approximate metrics
-          console.log(`Metrics not available for ${node.node_id}, using estimates`);
+          console.log(`Live metrics not available for ${node.node_id}`);
         }
         
-        // Fallback: calculate metrics from available data
+        // Fallback: use data from heartbeat if live metrics fail
+        setDataSource(prev => ({ ...prev, [node.node_id]: 'estimated' }));
+        
+        // Get health status from datanode
+        try {
+          const nodeNumber = parseInt(node.node_id.split('-')[1]);
+          const port = 8081 + (nodeNumber - 1);
+          const healthResponse = await fetch(`http://localhost:${port}/health`);
+          
+          if (healthResponse.ok) {
+            const healthData = await healthResponse.json();
+            return {
+              node_id: node.node_id,
+              timestamp: healthData.timestamp || Date.now() / 1000,
+              cpu: healthData.system?.cpu_usage || 0,
+              memory: healthData.system?.memory_usage || 0,
+              storage: (healthData.storage?.used / (healthData.storage?.used + healthData.storage?.available)) * 100 || 0,
+              chunk_count: healthData.storage?.chunk_count || node.chunk_count || 0,
+              uptime: healthData.uptime || (Date.now() / 1000 - (node.last_heartbeat || 0))
+            };
+          }
+        } catch (error) {
+          console.log(`Health endpoint not available for ${node.node_id}`);
+        }
+        
+        // Final fallback: use basic node data
         return {
           node_id: node.node_id,
           timestamp: Date.now() / 1000,
-          cpu: Math.random() * 30 + 10, // Simulate 10-40% CPU usage
-          memory: Math.random() * 40 + 20, // Simulate 20-60% memory usage
+          cpu: 0,
+          memory: 0,
           storage: node.used_space && (node.used_space + node.available_space) > 0 
             ? (node.used_space / (node.used_space + node.available_space)) * 100 
             : 0,
-          chunk_count: node.chunk_count,
-          uptime: Date.now() / 1000 - (node.last_heartbeat || 0)
+          chunk_count: node.chunk_count || 0,
+          uptime: Date.now() / 1000 - (node.last_heartbeat || Date.now() / 1000)
         };
       });
       
@@ -204,9 +243,9 @@ function ClusterDashboard({ darkMode }) {
       // Calculate average metrics for the chart
       const avgMetric = {
         time: new Date().toLocaleTimeString(),
-        cpu: metricsData.reduce((sum, m) => sum + m.cpu, 0) / metricsData.length,
-        memory: metricsData.reduce((sum, m) => sum + m.memory, 0) / metricsData.length,
-        storage: metricsData.reduce((sum, m) => sum + m.storage, 0) / metricsData.length
+        cpu: metricsData.reduce((sum, m) => sum + (m.cpu || 0), 0) / metricsData.length,
+        memory: metricsData.reduce((sum, m) => sum + (m.memory || 0), 0) / metricsData.length,
+        storage: metricsData.reduce((sum, m) => sum + (m.storage || 0), 0) / metricsData.length
       };
       
       setMetrics(prev => [...prev.slice(-20), avgMetric]);
@@ -266,6 +305,8 @@ function ClusterDashboard({ darkMode }) {
         <NodeList>
           {datanodes.map(node => {
             const nodeMetric = nodeMetrics[node.node_id] || {};
+            const isLiveData = dataSource[node.node_id] === 'live';
+            
             return (
               <NodeItem key={node.node_id} darkMode={darkMode}>
                 <NodeInfo>
@@ -276,6 +317,9 @@ function ClusterDashboard({ darkMode }) {
                       {node.host}:{node.port} • {node.chunk_count} chunks
                       {nodeMetric.uptime && ` • Up ${formatUptime(nodeMetric.uptime)}`}
                     </NodeStats>
+                    <DataSourceIndicator isLive={isLiveData}>
+                      {isLiveData ? '● Live data' : '○ Estimated'}
+                    </DataSourceIndicator>
                   </NodeDetails>
                 </NodeInfo>
                 
@@ -300,7 +344,7 @@ function ClusterDashboard({ darkMode }) {
                     </div>
                   </Metric>
                   
-                  {nodeMetric.cpu !== undefined && (
+                  {nodeMetric.cpu !== undefined && nodeMetric.cpu > 0 && (
                     <Metric darkMode={darkMode}>
                       <Cpu size={14} />
                       <div>
@@ -312,11 +356,11 @@ function ClusterDashboard({ darkMode }) {
                     </Metric>
                   )}
                   
-                  {nodeMetric.memory !== undefined && (
+                  {nodeMetric.memory !== undefined && nodeMetric.memory > 0 && (
                     <Metric darkMode={darkMode}>
                       <Gauge size={14} />
                       <div>
-                        <MetricLabel darkMode={darkMode}>Gauge</MetricLabel>
+                        <MetricLabel darkMode={darkMode}>Memory</MetricLabel>
                         <MetricValue darkMode={darkMode}>
                           {nodeMetric.memory.toFixed(1)}%
                         </MetricValue>
@@ -362,7 +406,7 @@ function ClusterDashboard({ darkMode }) {
                 dataKey="memory" 
                 stroke="#28a745" 
                 strokeWidth={2} 
-                name="Gauge %"
+                name="Memory %"
               />
               <Line 
                 type="monotone" 

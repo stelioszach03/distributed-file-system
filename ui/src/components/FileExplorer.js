@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from '@emotion/styled';
 import { 
   Folder, File, Download, Trash2, Info, RefreshCw, 
-  ChevronRight, Search, Grid, List
+  ChevronRight, Search, Grid, List, AlertCircle
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -174,6 +174,32 @@ const LoadingState = styled.div`
   color: ${props => props.darkMode ? '#666' : '#999'};
 `;
 
+const ErrorMessage = styled.div`
+  background: #dc3545;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  margin: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`;
+
+const DownloadingIndicator = styled.div`
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: ${props => props.darkMode ? '#1a1a1a' : '#ffffff'};
+  border: 1px solid ${props => props.darkMode ? '#333' : '#e0e0e0'};
+  border-radius: 0.5rem;
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  z-index: 1000;
+`;
+
 function FileExplorer({ darkMode, refreshKey, onRefresh }) {
   const [currentPath, setCurrentPath] = useState('/');
   const [contents, setContents] = useState([]);
@@ -181,6 +207,8 @@ function FileExplorer({ darkMode, refreshKey, onRefresh }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('list');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [downloading, setDownloading] = useState(null);
 
   useEffect(() => {
     loadDirectory(currentPath);
@@ -188,14 +216,19 @@ function FileExplorer({ darkMode, refreshKey, onRefresh }) {
 
   const loadDirectory = async (path) => {
     setLoading(true);
+    setError(null);
     try {
       const data = await api.listDirectory(path);
       setContents(data);
       setSelectedFile(null);
     } catch (error) {
       console.error('Failed to load directory:', error);
-      // If directory doesn't exist or error, show empty
       setContents([]);
+      if (error.response?.status === 404) {
+        setError(`Directory not found: ${path}`);
+      } else {
+        setError(`Failed to load directory: ${error.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -211,47 +244,19 @@ function FileExplorer({ darkMode, refreshKey, onRefresh }) {
 
   const handleDownload = async (file) => {
     try {
-      // Note: Real download implementation would require:
-      // 1. Backend endpoint that serves file content
-      // 2. Handling chunked downloads for large files
-      // 3. Progress tracking
+      setDownloading(file.name);
       
-      // For now, we'll create a simple download link
-      // In a real implementation, this would fetch actual file content
+      // Use the actual download endpoint from the API
       const response = await fetch(`/api/files${file.path}/download`);
       
       if (!response.ok) {
-        console.error('Download failed:', response.statusText);
-        // For demo, create a dummy file
-        const blob = new Blob([`Content of ${file.name}\nSize: ${file.size} bytes\nPath: ${file.path}`], 
-                            { type: 'text/plain' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } else {
-        // Real implementation would handle the response blob
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        throw new Error(`Download failed: ${response.statusText}`);
       }
-    } catch (error) {
-      console.error('Download failed:', error);
-      // Fallback: create a demo file
-      const blob = new Blob(
-        [`Demo content for ${file.name}\n\nThis is a demonstration file.\nIn a real implementation, this would contain the actual file content from the distributed file system.`], 
-        { type: 'text/plain' }
-      );
+      
+      // Get the blob from the response
+      const blob = await response.blob();
+      
+      // Create download link
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -260,6 +265,15 @@ function FileExplorer({ darkMode, refreshKey, onRefresh }) {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      
+      setDownloading(null);
+    } catch (error) {
+      console.error('Download failed:', error);
+      setError(`Failed to download ${file.name}: ${error.message}`);
+      setDownloading(null);
+      
+      // Clear error after 5 seconds
+      setTimeout(() => setError(null), 5000);
     }
   };
 
@@ -270,7 +284,8 @@ function FileExplorer({ darkMode, refreshKey, onRefresh }) {
         onRefresh();
       } catch (error) {
         console.error('Delete failed:', error);
-        alert(`Failed to delete ${file.name}: ${error.message}`);
+        setError(`Failed to delete ${file.name}: ${error.message}`);
+        setTimeout(() => setError(null), 5000);
       }
     }
   };
@@ -295,125 +310,141 @@ function FileExplorer({ darkMode, refreshKey, onRefresh }) {
   const pathSegments = currentPath.split('/').filter(Boolean);
 
   return (
-    <Container darkMode={darkMode}>
-      <Toolbar darkMode={darkMode}>
-        <PathBar darkMode={darkMode}>
-          <PathSegment onClick={() => setCurrentPath('/')}>
-            Home
-          </PathSegment>
-          {pathSegments.map((segment, index) => (
-            <React.Fragment key={index}>
-              <ChevronRight size={16} />
-              <PathSegment 
-                onClick={() => {
-                  const newPath = '/' + pathSegments.slice(0, index + 1).join('/');
-                  setCurrentPath(newPath);
-                }}
-              >
-                {segment}
-              </PathSegment>
-            </React.Fragment>
-          ))}
-        </PathBar>
-        
-        <Actions>
-          <SearchBar>
-            <SearchIcon darkMode={darkMode} size={16} />
-            <SearchInput
-              darkMode={darkMode}
-              type="text"
-              placeholder="Search files..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </SearchBar>
+    <>
+      <Container darkMode={darkMode}>
+        <Toolbar darkMode={darkMode}>
+          <PathBar darkMode={darkMode}>
+            <PathSegment onClick={() => setCurrentPath('/')}>
+              Home
+            </PathSegment>
+            {pathSegments.map((segment, index) => (
+              <React.Fragment key={index}>
+                <ChevronRight size={16} />
+                <PathSegment 
+                  onClick={() => {
+                    const newPath = '/' + pathSegments.slice(0, index + 1).join('/');
+                    setCurrentPath(newPath);
+                  }}
+                >
+                  {segment}
+                </PathSegment>
+              </React.Fragment>
+            ))}
+          </PathBar>
           
-          <IconButton darkMode={darkMode} onClick={onRefresh} title="Refresh">
-            <RefreshCw size={20} />
-          </IconButton>
-          
-          <IconButton 
-            darkMode={darkMode}
-            onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
-            title={viewMode === 'list' ? 'Grid view' : 'List view'}
-          >
-            {viewMode === 'list' ? <Grid size={20} /> : <List size={20} />}
-          </IconButton>
-        </Actions>
-      </Toolbar>
-      
-      <FileList>
-        {loading ? (
-          <LoadingState darkMode={darkMode}>
-            <RefreshCw size={48} style={{ animation: 'spin 1s linear infinite' }} />
-            <p>Loading...</p>
-          </LoadingState>
-        ) : filteredContents.length === 0 ? (
-          <EmptyState darkMode={darkMode}>
-            <Folder size={48} />
-            <p>{searchTerm ? 'No matching files found' : 'This folder is empty'}</p>
-          </EmptyState>
-        ) : (
-          filteredContents.map((item) => (
-            <FileItem
-              key={item.path}
+          <Actions>
+            <SearchBar>
+              <SearchIcon darkMode={darkMode} size={16} />
+              <SearchInput
+                darkMode={darkMode}
+                type="text"
+                placeholder="Search files..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </SearchBar>
+            
+            <IconButton darkMode={darkMode} onClick={onRefresh} title="Refresh">
+              <RefreshCw size={20} />
+            </IconButton>
+            
+            <IconButton 
               darkMode={darkMode}
-              selected={selectedFile?.path === item.path}
-              onClick={() => handleNavigate(item)}
+              onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
+              title={viewMode === 'list' ? 'Grid view' : 'List view'}
             >
-              <FileIcon isFolder={item.type === 'directory'}>
-                {item.type === 'directory' ? 
-                  <Folder size={20} /> : 
-                  <File size={20} />
-                }
-              </FileIcon>
-              
-              <FileInfo>
-                <div>
-                  <FileName darkMode={darkMode}>{item.name}</FileName>
-                  {selectedFile?.path === item.path && item.type === 'file' && (
-                    <FileDetails darkMode={darkMode}>
-                      <span>Modified: {formatDate(item.modified_at)}</span>
-                      <span>Created: {formatDate(item.created_at)}</span>
-                    </FileDetails>
-                  )}
-                </div>
-                <FileSize darkMode={darkMode}>
-                  {formatBytes(item.size)}
-                </FileSize>
-              </FileInfo>
-              
-              <FileActions>
-                {item.type === 'file' && (
-                  <>
-                    <IconButton 
-                      darkMode={darkMode}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownload(item);
-                      }}
-                      title="Download"
-                    >
-                      <Download size={16} />
-                    </IconButton>
-                    <IconButton 
-                      darkMode={darkMode}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(item);
-                      }}
-                      title="Delete"
-                    >
-                      <Trash2 size={16} />
-                    </IconButton>
-                  </>
-                )}
-              </FileActions>
-            </FileItem>
-          ))
+              {viewMode === 'list' ? <Grid size={20} /> : <List size={20} />}
+            </IconButton>
+          </Actions>
+        </Toolbar>
+        
+        {error && (
+          <ErrorMessage>
+            <AlertCircle size={20} />
+            {error}
+          </ErrorMessage>
         )}
-      </FileList>
-    </Container>
+        
+        <FileList>
+          {loading ? (
+            <LoadingState darkMode={darkMode}>
+              <RefreshCw size={48} style={{ animation: 'spin 1s linear infinite' }} />
+              <p>Loading...</p>
+            </LoadingState>
+          ) : filteredContents.length === 0 ? (
+            <EmptyState darkMode={darkMode}>
+              <Folder size={48} />
+              <p>{searchTerm ? 'No matching files found' : 'This folder is empty'}</p>
+            </EmptyState>
+          ) : (
+            filteredContents.map((item) => (
+              <FileItem
+                key={item.path}
+                darkMode={darkMode}
+                selected={selectedFile?.path === item.path}
+                onClick={() => handleNavigate(item)}
+              >
+                <FileIcon isFolder={item.type === 'directory'}>
+                  {item.type === 'directory' ? 
+                    <Folder size={20} /> : 
+                    <File size={20} />
+                  }
+                </FileIcon>
+                
+                <FileInfo>
+                  <div>
+                    <FileName darkMode={darkMode}>{item.name}</FileName>
+                    {selectedFile?.path === item.path && item.type === 'file' && (
+                      <FileDetails darkMode={darkMode}>
+                        <span>Modified: {formatDate(item.modified_at)}</span>
+                        <span>Created: {formatDate(item.created_at)}</span>
+                      </FileDetails>
+                    )}
+                  </div>
+                  <FileSize darkMode={darkMode}>
+                    {formatBytes(item.size)}
+                  </FileSize>
+                </FileInfo>
+                
+                <FileActions>
+                  {item.type === 'file' && (
+                    <>
+                      <IconButton 
+                        darkMode={darkMode}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(item);
+                        }}
+                        title="Download"
+                      >
+                        <Download size={16} />
+                      </IconButton>
+                      <IconButton 
+                        darkMode={darkMode}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(item);
+                        }}
+                        title="Delete"
+                      >
+                        <Trash2 size={16} />
+                      </IconButton>
+                    </>
+                  )}
+                </FileActions>
+              </FileItem>
+            ))
+          )}
+        </FileList>
+      </Container>
+      
+      {downloading && (
+        <DownloadingIndicator darkMode={darkMode}>
+          <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />
+          Downloading {downloading}...
+        </DownloadingIndicator>
+      )}
+    </>
   );
 }
 

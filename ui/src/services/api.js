@@ -11,6 +11,30 @@ class ApiService {
         'Content-Type': 'application/json',
       },
     });
+
+    // Add response interceptor for better error handling
+    this.client.interceptors.response.use(
+      response => response,
+      error => {
+        // Log errors for debugging
+        console.error('API Error:', error);
+        
+        // Add more context to the error
+        if (error.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          error.message = `Server error: ${error.response.status} - ${error.response.data?.error || error.response.statusText}`;
+        } else if (error.request) {
+          // The request was made but no response was received
+          error.message = 'No response from server. Please check if the server is running.';
+        } else {
+          // Something happened in setting up the request that triggered an Error
+          error.message = `Request error: ${error.message}`;
+        }
+        
+        return Promise.reject(error);
+      }
+    );
   }
 
   // File operations
@@ -22,8 +46,41 @@ class ApiService {
     return response.data;
   }
 
+  async uploadFile(file, path, replicationFactor = 3) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('path', path);
+    formData.append('replication_factor', replicationFactor);
+
+    const response = await this.client.post('/files', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      // Track upload progress
+      onUploadProgress: (progressEvent) => {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        console.log(`Upload progress: ${percentCompleted}%`);
+      },
+    });
+    return response.data;
+  }
+
   async getFileInfo(path) {
     const response = await this.client.get(`/files${path}`);
+    return response.data;
+  }
+
+  async downloadFile(path) {
+    const response = await this.client.get(`/files${path}/download`, {
+      responseType: 'blob',
+      // Track download progress
+      onDownloadProgress: (progressEvent) => {
+        if (progressEvent.total) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          console.log(`Download progress: ${percentCompleted}%`);
+        }
+      },
+    });
     return response.data;
   }
 
@@ -60,6 +117,17 @@ class ApiService {
       size,
       replication_factor: replicationFactor,
     });
+    return response.data;
+  }
+
+  async getChunkStatus() {
+    const response = await this.client.get('/chunks/status');
+    return response.data;
+  }
+
+  // Health check
+  async checkHealth() {
+    const response = await this.client.get('/health');
     return response.data;
   }
 }

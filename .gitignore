@@ -16,7 +16,6 @@ parts/
 sdist/
 var/
 wheels/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -28,30 +27,16 @@ MANIFEST
 nosetests.xml
 coverage.xml
 *.cover
-*.py,cover
 .hypothesis/
-.tox/
-.env
-.venv
-env/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Virtual Environment
 venv/
 ENV/
-env.bak/
-venv.bak/
-
-# Node.js / React
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-.npm
-.eslintcache
-.node_repl_history
-*.tgz
-.yarn-integrity
-ui/build/
-ui/dist/
+env/
+.venv
 
 # IDE
 .vscode/
@@ -65,31 +50,24 @@ ui/dist/
 .docker/
 
 # Logs
-logs/
 *.log
+logs/
 
-# Data and Storage
+# Workspace data
 workspace/*
 !workspace/.gitkeep
-datanode_storage/
-namenode_metadata/
 
-# Environment variables
+# Node modules
+node_modules/
+ui/node_modules/
+
+# Build files
+ui/build/
+
+# Environment files
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Monitoring data
-monitoring/grafana/data/
-monitoring/prometheus/data/
-
-# Temporary files
-*.tmp
-*.temp
-.temp/
-.tmp/
+.env.*.local
 
 # OS Files
 Thumbs.db
@@ -97,30 +75,8 @@ Thumbs.db
 .AppleDouble
 .LSOverride
 
-# Testing
-htmlcov/
-.benchmarks/
-
-# Security
-*.pem
-*.key
-*.crt
-*.cert
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
 # Backup files
 *.bak
 *.backup
+*.old
 *~
-
-# Custom
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
-.pytype/
-cython_debug/

@@ -230,6 +230,22 @@ const StatusItem = styled.div`
   ${props => props.success && `
     color: #28a745;
   `}
+  
+  ${props => props.error && `
+    color: #dc3545;
+  `}
+`;
+
+const MaxSizeWarning = styled.div`
+  background: #ffc107;
+  color: #000;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 `;
 
 function UploadModal({ darkMode, onClose, onComplete }) {
@@ -241,6 +257,8 @@ function UploadModal({ darkMode, onClose, onComplete }) {
   const [message, setMessage] = useState(null);
   const [uploadStatus, setUploadStatus] = useState([]);
   const fileInputRef = useRef(null);
+
+  const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -256,12 +274,35 @@ function UploadModal({ darkMode, onClose, onComplete }) {
     setIsDragging(false);
     
     const droppedFiles = Array.from(e.dataTransfer.files);
-    setFiles(droppedFiles);
+    validateAndSetFiles(droppedFiles);
   };
 
   const handleFileSelect = (e) => {
     const selectedFiles = Array.from(e.target.files);
-    setFiles(selectedFiles);
+    validateAndSetFiles(selectedFiles);
+  };
+
+  const validateAndSetFiles = (fileList) => {
+    const validFiles = [];
+    const errors = [];
+
+    fileList.forEach(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`${file.name} exceeds 5GB limit`);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (errors.length > 0) {
+      setMessage({
+        type: 'error',
+        text: errors.join(', ')
+      });
+      setTimeout(() => setMessage(null), 5000);
+    }
+
+    setFiles(validFiles);
   };
 
   const handleUpload = async () => {
@@ -274,6 +315,7 @@ function UploadModal({ darkMode, onClose, onComplete }) {
     
     try {
       let successCount = 0;
+      let failCount = 0;
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -307,52 +349,47 @@ function UploadModal({ darkMode, onClose, onComplete }) {
               )
             );
           } else {
+            failCount++;
             const error = await response.json();
-            throw new Error(error.error || 'Upload failed');
-          }
-          
-        } catch (fileError) {
-          // If multipart upload not supported, fallback to metadata creation
-          console.log('Multipart upload not available, creating file metadata only');
-          
-          const response = await fetch('/api/files', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              path: filePath,
-              replication_factor: 3
-            })
-          });
-          
-          if (response.ok) {
-            successCount++;
             setUploadStatus(prev => 
               prev.map(s => s.name === file.name 
-                ? { ...s, status: 'success', note: 'Metadata only' } 
-                : s
-              )
-            );
-          } else {
-            setUploadStatus(prev => 
-              prev.map(s => s.name === file.name 
-                ? { ...s, status: 'error' } 
+                ? { ...s, status: 'error', error: error.error || 'Upload failed' } 
                 : s
               )
             );
           }
+          
+        } catch (error) {
+          failCount++;
+          console.error(`Failed to upload ${file.name}:`, error);
+          setUploadStatus(prev => 
+            prev.map(s => s.name === file.name 
+              ? { ...s, status: 'error', error: error.message } 
+              : s
+            )
+          );
         }
         
         setProgress(((i + 1) / files.length) * 100);
       }
       
-      setMessage({
-        type: 'success',
-        text: `Successfully uploaded ${successCount} of ${files.length} files`
-      });
-      
-      setTimeout(() => {
-        onComplete();
-      }, 1500);
+      // Final status message
+      if (failCount === 0) {
+        setMessage({
+          type: 'success',
+          text: `Successfully uploaded all ${successCount} files`
+        });
+        
+        setTimeout(() => {
+          onComplete();
+        }, 1500);
+      } else {
+        setMessage({
+          type: 'error',
+          text: `Uploaded ${successCount} files, ${failCount} failed`
+        });
+        setUploading(false);
+      }
       
     } catch (error) {
       console.error('Upload failed:', error);
@@ -370,6 +407,8 @@ function UploadModal({ darkMode, onClose, onComplete }) {
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
+
+  const hasLargeFiles = files.some(f => f.size > 100 * 1024 * 1024); // 100MB
 
   return (
     <Overlay onClick={onClose}>
@@ -425,6 +464,13 @@ function UploadModal({ darkMode, onClose, onComplete }) {
             </FileList>
           )}
           
+          {hasLargeFiles && !uploading && (
+            <MaxSizeWarning>
+              <AlertCircle size={16} />
+              Large files detected. Upload may take several minutes.
+            </MaxSizeWarning>
+          )}
+          
           {uploading && (
             <>
               <Progress>
@@ -443,11 +489,13 @@ function UploadModal({ darkMode, onClose, onComplete }) {
                       key={index} 
                       darkMode={darkMode}
                       success={status.status === 'success'}
+                      error={status.status === 'error'}
                     >
                       {status.status === 'success' && <CheckCircle size={16} />}
                       {status.status === 'error' && <AlertCircle size={16} />}
+                      {status.status === 'uploading' && '⏳'}
                       {status.name}
-                      {status.note && ` (${status.note})`}
+                      {status.error && ` - ${status.error}`}
                     </StatusItem>
                   ))}
                 </FileStatus>
@@ -472,9 +520,9 @@ function UploadModal({ darkMode, onClose, onComplete }) {
             </CancelButton>
             <UploadButton 
               onClick={handleUpload} 
-              disabled={files.length === 0 || uploading}
+              disabled={files.length === 0 || uploading || !dfsPath}
             >
-              Upload
+              {uploading ? 'Uploading...' : 'Upload'}
             </UploadButton>
           </Actions>
         </Content>
