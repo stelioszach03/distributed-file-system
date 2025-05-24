@@ -1,0 +1,15 @@
+#!/bin/bash
+# Run DFS client in Docker container
+
+# Ensure network fix is applied
+docker-compose exec -T client bash -c '
+if ! grep -q namenode /etc/hosts; then
+    echo "172.18.0.2 namenode" >> /etc/hosts
+    echo "172.18.0.3 datanode-1" >> /etc/hosts  
+    echo "172.18.0.4 datanode-2" >> /etc/hosts
+    echo "172.18.0.5 datanode-3" >> /etc/hosts
+fi
+' 2>/dev/null
+
+# Run command
+docker-compose exec -T client python -m client.cli "$@"

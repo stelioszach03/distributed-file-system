@@ -1,3 +1,19 @@
+#!/bin/bash
+# Complete fix script for the distributed file system
+
+echo "=== Complete Fix for Distributed File System ==="
+echo ""
+
+# Stop all services first
+echo "Stopping all services..."
+docker-compose down
+
+# Fix both client/api_client.py and namenode/file_handlers.py
+echo "Fixing client/api_client.py..."
+cp client/api_client.py client/api_client.py.backup 2>/dev/null || true
+
+# Create fixed version directly from the document content
+cat > client/api_client.py << 'CLIENTEOF'
 """
 API client library for interacting with the distributed file system.
 """
@@ -280,3 +296,62 @@ class DFSClient:
             }
         )
         response.raise_for_status()
+CLIENTEOF
+
+echo "Fixing namenode/file_handlers.py..."
+cp namenode/file_handlers.py namenode/file_handlers.py.backup 2>/dev/null || true
+
+# The key fix is in how we handle the node_id
+sed -i 's/datanode_url = f"http:\/\/datanode-{node_id}:{api_port}"/datanode_url = f"http:\/\/{node_id}:{api_port}"/g' namenode/file_handlers.py
+
+# Also need to ensure metadata_manager doesn't cause issues
+echo "Checking namenode/metadata_manager.py..."
+# Make sure parent directory check doesn't fail for root paths
+sed -i '/ parent_path != .\/.\ and parent_path not in self.directories:/s/parent_path != .\/.\ and/parent_path != .\/.\ and parent_path != "" and/' namenode/metadata_manager.py 2>/dev/null || true
+
+# Rebuild containers to ensure changes are applied
+echo ""
+echo "Rebuilding containers..."
+docker-compose build namenode datanode1 datanode2 datanode3 client
+
+# Start services
+echo ""
+echo "Starting services..."
+docker-compose up -d
+
+# Wait for services to be ready
+echo ""
+echo "Waiting for services to be ready (20 seconds)..."
+sleep 20
+
+# Create test directory first
+echo ""
+echo "Creating test directory..."
+docker-compose exec -T client python -m client.cli mkdir /tests || true
+
+# Test the system
+echo ""
+echo "Testing file upload..."
+docker-compose exec -T client bash -c "echo 'Testing complete fix!' > /workspace/test_complete.txt"
+docker-compose exec -T client python -m client.cli upload /workspace/test_complete.txt /tests/complete.txt
+
+echo ""
+echo "Checking uploaded file..."
+docker-compose exec -T client python -m client.cli ls /tests
+
+echo ""
+echo "Testing file download..."
+docker-compose exec -T client python -m client.cli download /tests/complete.txt /workspace/downloaded_complete.txt
+docker-compose exec -T client cat /workspace/downloaded_complete.txt
+
+echo ""
+echo "=== Complete Fix Applied ==="
+echo ""
+echo "The system should now be working correctly."
+echo "You can access:"
+echo "• Web UI: http://localhost:3001"
+echo "• Grafana: http://localhost:3000 (admin/admin)"
+echo "• NameNode API: http://localhost:8080"
+echo ""
+echo "To run full tests: ./test_system.sh"
+echo "To see a demo: ./demo.sh"

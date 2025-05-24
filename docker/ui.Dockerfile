@@ -2,15 +2,15 @@ FROM node:16-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy UI directory contents
+COPY ui/package*.json ./
 
 # Install dependencies
 RUN npm install
 
-# Copy source code
-COPY public ./public
-COPY src ./src
+# Copy UI source code
+COPY ui/public ./public
+COPY ui/src ./src
 
 # Build the app
 RUN npm run build
@@ -21,7 +21,7 @@ FROM nginx:alpine
 # Copy built files
 COPY --from=builder /app/build /usr/share/nginx/html
 
-# Copy nginx configuration
+# Copy nginx configuration from root
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

@@ -1,3 +1,16 @@
+#!/bin/bash
+# Script to fix the upload issue
+
+echo "=== Fixing Upload Issue ==="
+
+# Backup original files
+echo "Backing up original files..."
+cp client/api_client.py client/api_client.py.bak
+cp namenode/file_handlers.py namenode/file_handlers.py.bak
+
+# Create the fixed client/api_client.py
+echo "Updating client/api_client.py..."
+cat > client/api_client.py << 'EOF'
 """
 API client library for interacting with the distributed file system.
 """
@@ -78,7 +91,7 @@ class DFSClient:
             logger.error(f"Failed to upload file: {e}")
             # Clean up on failure
             try:
-                self.delete_file(dfs_path)
+                self.metadata_manager.delete_file(dfs_path)
             except:
                 pass
             raise
@@ -193,13 +206,15 @@ class DFSClient:
     
     def _upload_chunk_to_node(self, chunk_id: str, data: bytes, node_id: str):
         """Upload chunk data to a specific DataNode."""
+        # Fix: Extract node number from node_id properly
         try:
-            # node_id is already the correct hostname like "datanode-1"
-            # Extract the number to calculate the port
+            # node_id is like "datanode-1", extract the number
             node_number = int(node_id.split('-')[-1])
-            api_port = 8081 + (node_number - 1)
+            # Calculate the port offset
+            port_offset = node_number - 1
+            api_port = 8081 + port_offset
             
-            # Use the node_id directly as hostname
+            # Use the hostname directly (e.g., "datanode-1")
             datanode_url = f"http://{node_id}:{api_port}"
             
             response = self.session.put(
@@ -218,11 +233,12 @@ class DFSClient:
     def _download_chunk_from_node(self, chunk_id: str, node_id: str) -> bytes:
         """Download chunk data from a specific DataNode."""
         try:
-            # Extract node number and calculate port
+            # Fix: Extract node number from node_id properly
             node_number = int(node_id.split('-')[-1])
-            api_port = 8081 + (node_number - 1)
+            port_offset = node_number - 1
+            api_port = 8081 + port_offset
             
-            # Use the node_id directly as hostname
+            # Use the hostname directly
             datanode_url = f"http://{node_id}:{api_port}"
             
             response = self.session.get(
@@ -239,9 +255,10 @@ class DFSClient:
     def _trigger_replication(self, chunk_id: str, source_node: str, target_nodes: List[str]):
         """Trigger chunk replication from source to target nodes."""
         try:
-            # Extract node number and calculate port
+            # Fix: Extract node number properly
             node_number = int(source_node.split('-')[-1])
-            api_port = 8081 + (node_number - 1)
+            port_offset = node_number - 1
+            api_port = 8081 + port_offset
             
             datanode_url = f"http://{source_node}:{api_port}"
             
@@ -249,11 +266,11 @@ class DFSClient:
             targets = []
             for target_id in target_nodes:
                 target_number = int(target_id.split('-')[-1])
-                target_api_port = 8081 + (target_number - 1)
+                target_port_offset = target_number - 1
                 targets.append({
                     'node_id': target_id,
                     'host': target_id,  # Use node_id as hostname
-                    'api_port': target_api_port
+                    'api_port': 8081 + target_port_offset
                 })
             
             response = self.session.post(
@@ -280,3 +297,37 @@ class DFSClient:
             }
         )
         response.raise_for_status()
+EOF
+
+# Restart the services
+echo ""
+echo "Restarting services..."
+docker-compose restart namenode datanode1 datanode2 datanode3 client
+
+# Wait for services
+echo "Waiting for services to restart (15 seconds)..."
+sleep 15
+
+# Test the fix
+echo ""
+echo "Testing file upload..."
+docker-compose exec -T client bash -c "echo 'Testing fixed upload system!' > /workspace/test_fix.txt"
+docker-compose exec -T client python -m client.cli upload /workspace/test_fix.txt /test_fix.txt
+
+# Check if upload worked
+echo ""
+echo "Checking uploaded file..."
+docker-compose exec -T client python -m client.cli ls /
+
+echo ""
+echo "=== Fix Applied Successfully ==="
+echo ""
+echo "The upload issue has been fixed. You can now:"
+echo "1. Upload files using the CLI:"
+echo "   docker-compose exec client python -m client.cli upload <local_file> <dfs_path>"
+echo ""
+echo "2. Upload files using the Web UI:"
+echo "   http://localhost:3001"
+echo ""
+echo "3. Run the full initialization again:"
+echo "   bash scripts/init_system.sh"

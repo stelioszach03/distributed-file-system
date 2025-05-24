@@ -53,7 +53,7 @@ class MetadataManager:
             
             # Ensure parent directory exists
             parent_path = os.path.dirname(path)
-            if parent_path != '/' and parent_path not in self.directories:
+            if parent_path != ./. and parent_path != "" and parent_path not in self.directories:
                 raise FileNotFoundError(f"Parent directory not found: {parent_path}")
             
             # Create file metadata
@@ -117,7 +117,7 @@ class MetadataManager:
             
             # Ensure parent directory exists
             parent_path = os.path.dirname(path)
-            if parent_path != '/' and parent_path not in self.directories:
+            if parent_path != ./. and parent_path != "" and parent_path not in self.directories:
                 raise FileNotFoundError(f"Parent directory not found: {parent_path}")
             
             # Create directory

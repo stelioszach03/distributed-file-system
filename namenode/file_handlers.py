@@ -108,6 +108,8 @@ class FileHandlers:
             if not file_info:
                 raise NotFound(f"File not found: {file_path}")
             
+            logger.info(f"Downloading {file_path} ({file_info['size']} bytes)")
+            
             def generate():
                 """Generator to stream file chunks."""
                 for chunk_id in file_info.chunks:
@@ -170,11 +172,15 @@ class FileHandlers:
                 logger.error(f"DataNode {node_id} not found")
                 return False
             
-            # Determine DataNode API port based on node_id
-            port_offset = int(node_id.split('-')[-1]) - 1
+            # Fix: Calculate port based on node_id
+            # node_id is like "datanode-1", extract the number
+            node_number = int(node_id.split('-')[-1])
+            port_offset = node_number - 1
             api_port = DATANODE_API_PORT + port_offset
             
-            url = f"http://{node_info.host}:{api_port}/chunks/{chunk_id}"
+            # Use the node_id as hostname (it matches the container name)
+            url = f"http://{node_id}:{api_port}/chunks/{chunk_id}"
+            
             response = requests.put(
                 url,
                 data=data,
@@ -202,11 +208,14 @@ class FileHandlers:
                 logger.error(f"DataNode {node_id} not found")
                 return None
             
-            # Determine DataNode API port
-            port_offset = int(node_id.split('-')[-1]) - 1
+            # Fix: Calculate port based on node_id
+            node_number = int(node_id.split('-')[-1])
+            port_offset = node_number - 1
             api_port = DATANODE_API_PORT + port_offset
             
-            url = f"http://{node_info.host}:{api_port}/chunks/{chunk_id}"
+            # Use the node_id as hostname
+            url = f"http://{node_id}:{api_port}/chunks/{chunk_id}"
+            
             response = requests.get(url, timeout=30)
             
             if response.status_code == 200:
@@ -226,20 +235,24 @@ class FileHandlers:
             if not node_info:
                 return
             
-            port_offset = int(source_node.split('-')[-1]) - 1
+            # Fix: Calculate port based on node_id
+            node_number = int(source_node.split('-')[-1])
+            port_offset = node_number - 1
             api_port = DATANODE_API_PORT + port_offset
             
-            url = f"http://{node_info.host}:{api_port}/replicate"
+            # Use the node_id as hostname
+            url = f"http://{source_node}:{api_port}/replicate"
             
             # Prepare target node information
             targets = []
             for target_id in target_nodes:
                 target_info = self.chunk_manager.datanodes.get(target_id)
                 if target_info:
-                    target_port_offset = int(target_id.split('-')[-1]) - 1
+                    target_number = int(target_id.split('-')[-1])
+                    target_port_offset = target_number - 1
                     targets.append({
                         'node_id': target_id,
-                        'host': target_info.host,
+                        'host': target_id,  # Use node_id as hostname
                         'api_port': DATANODE_API_PORT + target_port_offset
                     })
             

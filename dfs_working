@@ -1,0 +1,30 @@
+#!/bin/bash
+# Working DFS wrapper that tries multiple methods
+
+# Method 1: Try quickdfs.py if it exists
+if [ -f "./quickdfs.py" ]; then
+    ./quickdfs.py "$@"
+    exit $?
+fi
+
+# Method 2: Try host client
+if [ -f "./dfs" ]; then
+    ./dfs "$@"
+    exit $?
+fi
+
+# Method 3: Try docker client
+if [ -f "./dfs-docker" ]; then
+    ./dfs-docker "$@"
+    exit $?
+fi
+
+# Method 4: Direct Python
+python3 -c "
+import os
+os.environ['NAMENODE_HOST'] = 'localhost'
+import sys
+sys.path.insert(0, '.')
+from client.cli import main
+main()
+" "$@"
